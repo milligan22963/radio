@@ -1,4 +1,4 @@
-module github.com/milligan22963/Radio/cmd/main.go
+module github.com/milligan22963/radio
 
 go 1.16
 
