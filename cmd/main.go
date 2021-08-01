@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/milligan22963/radio/cmd/subcmd"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

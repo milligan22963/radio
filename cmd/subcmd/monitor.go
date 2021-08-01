@@ -2,7 +2,7 @@
 package subcmd
 
 import (
-	"pkg/monitor"
+	"github.com/milligan22963/radio/pkg/monitor"
 
 	"github.com/spf13/cobra"
 )
