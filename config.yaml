@@ -3,5 +3,6 @@ radio:
     - "Abbott and Costello Whos On First.mp3"
   stations:
     - 97.5
+  # info, warn, error, debug, trace
   logging:
-    level: error
+    level: "info"

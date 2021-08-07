@@ -11,6 +11,9 @@ import (
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
+	"github.com/milligan22963/radio/pkg/util"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"gobot.io/x/gobot"
 	"gobot.io/x/gobot/platforms/keyboard"
 )
@@ -37,21 +40,21 @@ func (monitor *MonitorCmd) waitForExit() {
 func (monitor *MonitorCmd) playMusicFile(file string) {
 	f, err := os.Open(file)
 	if err != nil {
-		fmt.Printf("failed to open file: %v\n", err)
+		logrus.Errorf("failed to open file: %v\n", err)
 	}
 
 	streamer, format, err := mp3.Decode(f)
 	if err != nil {
-		fmt.Printf("mp3 decoding fail: %v\n", err)
+		logrus.Errorf("mp3 decoding fail: %v\n", err)
 	}
 	defer streamer.Close()
 	err = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
 	if err != nil {
-		fmt.Printf("speaker init fail: %v\n", err)
+		logrus.Errorf("speaker init fail: %v\n", err)
 	}
 	done := make(chan bool)
 	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-		fmt.Println("song has ended.")
+		logrus.Info("song has ended.")
 		done <- true
 	})))
 
@@ -63,15 +66,18 @@ func (monitor *MonitorCmd) setup() {
 	// configure gpios
 	keys := keyboard.NewDriver()
 
+	appKey := viper.GetString(util.AppNameKey)
+
+	songKey := appKey + "." + util.MusicKey
+	songs := viper.GetStringSlice(songKey)
+
 	work := func() {
 		keys.On(keyboard.Key, func(data interface{}) {
 			key := data.(keyboard.KeyEvent)
 
 			if key.Key == keyboard.A {
-				fmt.Println("starting to play song...")
-				monitor.playMusicFile("Abbott and Costello Whos On First.mp3")
-			} else {
-				fmt.Println("keyboard event!", key, key.Char)
+				logrus.Info("start to play song: " + songs[0])
+				monitor.playMusicFile(songs[0])
 			}
 		})
 	}

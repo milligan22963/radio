@@ -1,7 +1,11 @@
 package main
 
 import (
+	"os"
+	"path"
+
 	"github.com/milligan22963/radio/cmd/subcmd"
+	"github.com/milligan22963/radio/pkg/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +20,12 @@ func main() {
 			logrus.Info("starting up")
 		},
 	}
+
 	rootCmd.AddCommand(subcmd.MonitorCmd)
+
+	utilities := util.Util{}
+	utilities.SetupConfiguration(path.Base(os.Args[0]), "config.yaml")
+	utilities.SetupLogging()
 
 	if err := rootCmd.Execute(); err != nil {
 		logrus.Errorf("error executing cmd: %v", err)

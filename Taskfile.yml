@@ -12,3 +12,7 @@ tasks:
     cmds:
       - go build -o radio cmd/main.go
     silent: true
+
+  lint:
+    cmds:
+      - golangci-lint run cmd/main.go
