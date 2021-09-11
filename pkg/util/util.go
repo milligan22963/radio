@@ -11,6 +11,7 @@ const (
 	LogLevelKey = "logging.level"
 	MusicKey    = "music"    // array of songs
 	StationKey  = "stations" // stations to go with music
+	StaticKey   = "static"   // static options
 )
 
 type Util struct {

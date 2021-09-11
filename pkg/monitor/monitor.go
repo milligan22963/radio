@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -14,11 +15,10 @@ import (
 	"github.com/milligan22963/radio/pkg/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"gobot.io/x/gobot"
-	"gobot.io/x/gobot/platforms/keyboard"
 )
 
 type MonitorCmd struct {
+	mixer util.RadioMixer
 }
 
 func (monitor *MonitorCmd) waitForExit() {
@@ -35,6 +35,22 @@ func (monitor *MonitorCmd) waitForExit() {
 	}()
 
 	<-doneFlag
+}
+
+func (monitor *MonitorCmd) playRadio() {
+	logrus.Info("starting to play the radio")
+	desiredFormat := beep.SampleRate(44100)
+	err := speaker.Init(desiredFormat, desiredFormat.N(time.Second/10))
+	if err != nil {
+		logrus.Errorf("speaker init fail: %v\n", err)
+	}
+	done := make(chan bool)
+	speaker.Play(beep.Seq(&monitor.mixer, beep.Callback(func() {
+		logrus.Info("song has ended.")
+		done <- true
+	})))
+
+	<-done
 }
 
 func (monitor *MonitorCmd) playMusicFile(file string) {
@@ -61,39 +77,64 @@ func (monitor *MonitorCmd) playMusicFile(file string) {
 	<-done
 }
 
-func (monitor *MonitorCmd) setup() {
+func (monitor *MonitorCmd) loadStatic() {
+	appKey := viper.GetString(util.AppNameKey)
 
-	// configure gpios
-	keys := keyboard.NewDriver()
+	staticKey := appKey + "." + util.StaticKey
+	staticFiles := viper.GetStringSlice(staticKey)
 
+	monitor.mixer.Initialize()
+
+	for _, v := range staticFiles {
+		err := monitor.mixer.AddStatic(v)
+		if err != nil {
+			logrus.Error(err)
+		}
+	}
+}
+
+func (monitor *MonitorCmd) loadStations() {
 	appKey := viper.GetString(util.AppNameKey)
 
 	songKey := appKey + "." + util.MusicKey
 	songs := viper.GetStringSlice(songKey)
 
-	work := func() {
-		keys.On(keyboard.Key, func(data interface{}) {
-			key := data.(keyboard.KeyEvent)
+	stationKey := appKey + "." + util.StationKey
+	stations := viper.GetStringSlice(stationKey)
 
-			if key.Key == keyboard.A {
-				logrus.Info("start to play song: " + songs[0])
-				monitor.playMusicFile(songs[0])
-			}
-		})
+	if len(songs) != len(stations) {
+		logrus.Warnf("songs:\n+%v", songs)
+		logrus.Warnf("stations:\n+%v", stations)
+		panic("mismatch between number of songs and stations")
 	}
+	for k, v := range songs {
+		station, err := strconv.ParseFloat(stations[k], 10)
+		if err != nil {
+			logrus.Errorf("unable to parse station: %v, skipping", stations[k])
+			continue
+		}
+		err = monitor.mixer.AddStation(station, v)
+		if err != nil {
+			logrus.Errorf("unable to process station: %v", v)
+			continue
+		}
+	}
+}
 
-	robot := gobot.NewRobot("detector",
-		[]gobot.Connection{},
-		[]gobot.Device{keys},
-		work,
-	)
-
-	robot.Start()
+func (monitor *MonitorCmd) setup() {
+	// configure gpios
 }
 
 func (monitor *MonitorCmd) Run() {
 
+	monitor.loadStatic()
+	monitor.loadStations()
+
 	monitor.setup()
 
-	//	monitor.waitForExit()
+	monitor.playRadio()
+
+	monitor.waitForExit()
+
+	monitor.mixer.Close()
 }
