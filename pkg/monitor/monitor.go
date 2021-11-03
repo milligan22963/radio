@@ -15,6 +15,12 @@ import (
 	"github.com/milligan22963/radio/pkg/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+
+	//	"golang.org/x/exp/io/spi"
+	"periph.io/x/conn/v3/driver/driverreg"
+	"periph.io/x/conn/v3/physic"
+	"periph.io/x/conn/v3/spi"
+	"periph.io/x/conn/v3/spi/spireg"
 )
 
 type MonitorCmd struct {
@@ -123,6 +129,29 @@ func (monitor *MonitorCmd) loadStations() {
 
 func (monitor *MonitorCmd) setup() {
 	// configure gpios
+
+	// setup callbacks to play station based on adc
+	if _, err := driverreg.Init(); err != nil {
+		logrus.Fatal(err)
+	}
+	p, err := spireg.Open("")
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	defer p.Close()
+	c, err := p.Connect(physic.MegaHertz, spi.Mode0, 8)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	// Write 0x10 to the device, and read a byte right after.
+	write := []byte{0x10, 0x00}
+	read := make([]byte, len(write))
+	if err := c.Tx(write, read); err != nil {
+		logrus.Fatal(err)
+	}
+	// Use read.
+	fmt.Printf("%v\n", read[1:])
 }
 
 func (monitor *MonitorCmd) Run() {
