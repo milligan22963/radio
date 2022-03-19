@@ -9,19 +9,22 @@ import (
 	"time"
 
 	"github.com/faiface/beep"
-	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
 	"github.com/milligan22963/radio/pkg/util"
 	"github.com/sirupsen/logrus"
+	"github.com/stianeikeland/go-rpio/v4"
 )
 
+var gpioSleepPeriod = time.Second / 2
+
 type MonitorCmd struct {
-	mixer util.RadioMixer
+	mixer           util.RadioMixer
+	applicationDone chan bool
 }
 
 func (monitor *MonitorCmd) waitForExit() {
 	signals := make(chan os.Signal, 1)
-	doneFlag := make(chan bool, 1)
+	monitor.applicationDone = make(chan bool, 1)
 
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
@@ -29,10 +32,10 @@ func (monitor *MonitorCmd) waitForExit() {
 		sig := <-signals
 		fmt.Println("signal detected, ending operation")
 		fmt.Println(sig)
-		doneFlag <- true
+		monitor.applicationDone <- true
 	}()
 
-	<-doneFlag
+	<-monitor.applicationDone
 }
 
 func (monitor *MonitorCmd) playRadio() {
@@ -42,37 +45,12 @@ func (monitor *MonitorCmd) playRadio() {
 	if err != nil {
 		logrus.Errorf("speaker init fail: %v\n", err)
 	}
-	done := make(chan bool)
 	speaker.Play(beep.Seq(&monitor.mixer, beep.Callback(func() {
 		logrus.Info("song has ended.")
-		done <- true
+		monitor.applicationDone <- true
 	})))
 
-	<-done
-}
-
-func (monitor *MonitorCmd) playMusicFile(file string) {
-	f, err := os.Open(file)
-	if err != nil {
-		logrus.Errorf("failed to open file: %v\n", err)
-	}
-
-	streamer, format, err := mp3.Decode(f)
-	if err != nil {
-		logrus.Errorf("mp3 decoding fail: %v\n", err)
-	}
-	defer streamer.Close()
-	err = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	if err != nil {
-		logrus.Errorf("speaker init fail: %v\n", err)
-	}
-	done := make(chan bool)
-	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-		logrus.Info("song has ended.")
-		done <- true
-	})))
-
-	<-done
+	<-monitor.applicationDone
 }
 
 func (monitor *MonitorCmd) loadStatic(utilities util.Util) {
@@ -98,17 +76,50 @@ func (monitor *MonitorCmd) loadStations(utilities util.Util) {
 	}
 }
 
-func (monitor *MonitorCmd) setup() {
-	// configure gpios
+func (monitor *MonitorCmd) MonitorGPIO(station float64, pin rpio.Pin) {
+	pin.Input()
+	pin.PullUp()
+	pin.Detect(rpio.FallEdge) // enable falling edge event detection
 
+	defer pin.Detect(rpio.NoEdge) // disable edge event detection
+
+	for {
+		select {
+		case <-monitor.applicationDone:
+			return
+		default:
+			if pin.EdgeDetected() { // check if event occured
+				monitor.mixer.PlayStation(station)
+			}
+			time.Sleep(gpioSleepPeriod)
+		}
+	}
+}
+
+func (monitor *MonitorCmd) setupGPIO(utilities util.Util) {
+	// configure gpios
+	for _, v := range utilities.RadioInformation.Stations {
+		logrus.Infof("configuring gpio: %f - pin: %d", v.Station, v.GPIO)
+
+		go monitor.MonitorGPIO(float64(v.Station), rpio.Pin(v.GPIO))
+	}
 }
 
 func (monitor *MonitorCmd) Run(utilities util.Util) {
 
+	err := rpio.Open()
+
+	if err != nil {
+		logrus.Errorf("unable to open gpios: %v", err)
+		return
+	}
+
+	defer rpio.Close()
+
 	monitor.loadStatic(utilities)
 	monitor.loadStations(utilities)
 
-	monitor.setup()
+	monitor.setupGPIO(utilities)
 
 	go monitor.playRadio()
 
