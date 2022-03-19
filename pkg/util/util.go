@@ -2,48 +2,67 @@
 package util
 
 import (
+	"io/ioutil"
+	"path/filepath"
+
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	AppNameKey  = "appname"
 	LogLevelKey = "logging.level"
-	MusicKey    = "music"    // array of songs
-	StationKey  = "stations" // stations to go with music
+	MusicKey    = "music"    // song
+	StationsKey = "stations" // stations to go with music
+	StationKey  = "station"  // single station
 	StaticKey   = "static"   // static options
+	GPIOKey     = "gpio"     // the gpio to use
 )
 
+type MusicStation struct {
+	Music   string  `yaml:"music"`
+	Station float32 `yaml:"station"`
+	GPIO    int     `yaml:"gpio"`
+}
+
+type RadioInformation struct {
+	Static   []string       `yaml:"static"`
+	Stations []MusicStation `yaml:"stations"`
+}
+
+type Logging struct {
+	LogLevel string `yaml:"level"`
+}
+
+// Util is a struct tracking the app nam
 type Util struct {
-	appName string
+	RadioInformation RadioInformation `yaml:"radio"`
+	Logging          Logging          `yaml:"logging"`
 }
 
 // SetupConfiguration is used to load/configure our configuration
-func (util *Util) SetupConfiguration(appname, filename string) {
-	viper.SetConfigName(filename)
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("/etc/" + appname + "/")
-	viper.AddConfigPath("$HOME/." + appname)
-	viper.AddConfigPath(".")
+func (util *Util) SetupConfiguration(fileName string) {
+	fileContents, err := ioutil.ReadFile(filepath.Clean(fileName))
 
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Failed to read in the config file
-			logrus.Info("using configuration file: " + filename)
-		} else {
-			logrus.Error("unable to read in configuration file: " + filename)
-		}
+	if err != nil {
+		logrus.Errorf("unable to load radio station information: %v", err)
+		return
 	}
-	util.appName = appname
-	viper.Set(AppNameKey, appname)
+
+	err = yaml.Unmarshal(fileContents, util)
+	if err != nil {
+		logrus.Errorf("unable to load radio station information: %v", err)
+		return
+	}
+
+	logrus.Infof("configuration: %v", util)
 }
 
 // SetupLogging is used to configure our logging once config is done
 func (util *Util) SetupLogging() {
-	desiredLogLevel := util.appName + "." + LogLevelKey
-	logLevel, err := logrus.ParseLevel(viper.GetString(desiredLogLevel))
+	logLevel, err := logrus.ParseLevel(util.Logging.LogLevel)
 	if err != nil {
-		logrus.Errorf("failed to parse log level: %s, and key: %s", viper.GetString(desiredLogLevel), desiredLogLevel)
+		logrus.Errorf("failed to parse log level: %s", util.Logging.LogLevel)
 		logLevel = logrus.ErrorLevel
 	}
 	logrus.Info("using a log level of: " + logLevel.String())

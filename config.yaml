@@ -1,10 +1,10 @@
 radio:
   static:
     - "74938__digifishmusic__radio-static-short-wave-very-quiet.wav"
-  music:
-    - "Abbott and Costello Whos On First.mp3"
   stations:
-    - "97.5"
-  # info, warn, error, debug, trace
-  logging:
-    level: "info"
+    -
+      music: "Abbott and Costello Whos On First.mp3"
+      station: 97.5
+      gpio: 1
+logging:
+  level: "info"

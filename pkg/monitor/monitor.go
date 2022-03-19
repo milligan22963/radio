@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -14,13 +13,6 @@ import (
 	"github.com/faiface/beep/speaker"
 	"github.com/milligan22963/radio/pkg/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
-
-	//	"golang.org/x/exp/io/spi"
-	"periph.io/x/conn/v3/driver/driverreg"
-	"periph.io/x/conn/v3/physic"
-	"periph.io/x/conn/v3/spi"
-	"periph.io/x/conn/v3/spi/spireg"
 )
 
 type MonitorCmd struct {
@@ -35,7 +27,7 @@ func (monitor *MonitorCmd) waitForExit() {
 
 	go func() {
 		sig := <-signals
-		fmt.Println("ending operation")
+		fmt.Println("signal detected, ending operation")
 		fmt.Println(sig)
 		doneFlag <- true
 	}()
@@ -83,15 +75,11 @@ func (monitor *MonitorCmd) playMusicFile(file string) {
 	<-done
 }
 
-func (monitor *MonitorCmd) loadStatic() {
-	appKey := viper.GetString(util.AppNameKey)
-
-	staticKey := appKey + "." + util.StaticKey
-	staticFiles := viper.GetStringSlice(staticKey)
-
+func (monitor *MonitorCmd) loadStatic(utilities util.Util) {
 	monitor.mixer.Initialize()
 
-	for _, v := range staticFiles {
+	for _, v := range utilities.RadioInformation.Static {
+		logrus.Infof("loading static file: %s", v)
 		err := monitor.mixer.AddStatic(v)
 		if err != nil {
 			logrus.Error(err)
@@ -99,27 +87,10 @@ func (monitor *MonitorCmd) loadStatic() {
 	}
 }
 
-func (monitor *MonitorCmd) loadStations() {
-	appKey := viper.GetString(util.AppNameKey)
-
-	songKey := appKey + "." + util.MusicKey
-	songs := viper.GetStringSlice(songKey)
-
-	stationKey := appKey + "." + util.StationKey
-	stations := viper.GetStringSlice(stationKey)
-
-	if len(songs) != len(stations) {
-		logrus.Warnf("songs:\n+%v", songs)
-		logrus.Warnf("stations:\n+%v", stations)
-		panic("mismatch between number of songs and stations")
-	}
-	for k, v := range songs {
-		station, err := strconv.ParseFloat(stations[k], 10)
-		if err != nil {
-			logrus.Errorf("unable to parse station: %v, skipping", stations[k])
-			continue
-		}
-		err = monitor.mixer.AddStation(station, v)
+func (monitor *MonitorCmd) loadStations(utilities util.Util) {
+	for _, v := range utilities.RadioInformation.Stations {
+		logrus.Infof("adding station: %f - file: %s", v.Station, v.Music)
+		err := monitor.mixer.AddStation(float64(v.Station), v.Music)
 		if err != nil {
 			logrus.Errorf("unable to process station: %v", v)
 			continue
@@ -130,38 +101,16 @@ func (monitor *MonitorCmd) loadStations() {
 func (monitor *MonitorCmd) setup() {
 	// configure gpios
 
-	// setup callbacks to play station based on adc
-	if _, err := driverreg.Init(); err != nil {
-		logrus.Fatal(err)
-	}
-	p, err := spireg.Open("")
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	defer p.Close()
-	c, err := p.Connect(physic.MegaHertz, spi.Mode0, 8)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
-	// Write 0x10 to the device, and read a byte right after.
-	write := []byte{0x10, 0x00}
-	read := make([]byte, len(write))
-	if err := c.Tx(write, read); err != nil {
-		logrus.Fatal(err)
-	}
-	// Use read.
-	fmt.Printf("%v\n", read[1:])
 }
 
-func (monitor *MonitorCmd) Run() {
+func (monitor *MonitorCmd) Run(utilities util.Util) {
 
-	monitor.loadStatic()
-	monitor.loadStations()
+	monitor.loadStatic(utilities)
+	monitor.loadStations(utilities)
 
 	monitor.setup()
 
-	monitor.playRadio()
+	go monitor.playRadio()
 
 	monitor.waitForExit()
 
